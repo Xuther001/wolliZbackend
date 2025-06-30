@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import fs from 'fs';
+import cors from 'cors';
 import jwt from 'jsonwebtoken';
 import fetch from 'node-fetch';
 import userRoutes from './routes/userRoutes.js';
@@ -15,6 +16,15 @@ const privateKey = fs.readFileSync('./private.key', 'utf8');
 
 let accessToken = null;
 let instanceUrl = null;
+
+app.use(cors({ origin: 'http://localhost:3000' }));
+app.use(express.json());
+
+app.use('/api/users', userRoutes);
+
+app.get('/', (req, res) => {
+  res.send('Hello from Node.js with JWT!');
+});
 
 async function authenticateWithJWT() {
   const token = jwt.sign(
@@ -51,14 +61,6 @@ async function authenticateWithJWT() {
     console.error('JWT Auth Error:', err);
   }
 }
-
-app.use(express.json());
-
-app.use('/api/users', userRoutes);
-
-app.get('/', (req, res) => {
-  res.send('Hello from Node.js with JWT!');
-});
 
 app.get('/api/properties/:id', async (req, res) => {
   if (!accessToken || !instanceUrl) {
