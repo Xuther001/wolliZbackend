@@ -1,10 +1,15 @@
-require('dotenv').config();
-const express = require('express');
-const fs = require('fs');
-const jwt = require('jsonwebtoken');
+import express from 'express';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import jwt from 'jsonwebtoken';
+import fetch from 'node-fetch';
+import userRoutes from './routes/userRoutes.js';
+import { sequelize } from './models/index.js';
+
+dotenv.config();
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
 const privateKey = fs.readFileSync('./private.key', 'utf8');
 
@@ -48,6 +53,8 @@ async function authenticateWithJWT() {
 }
 
 app.use(express.json());
+
+app.use('/api/users', userRoutes);
 
 app.get('/', (req, res) => {
   res.send('Hello from Node.js with JWT!');
@@ -135,6 +142,15 @@ app.delete('/api/properties/:id', async (req, res) => {
 });
 
 app.listen(PORT, async () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-  await authenticateWithJWT();
+  try {
+    await sequelize.authenticate();
+    console.log('Connected to PostgreSQL database.');
+
+    await sequelize.sync({ alter: true });
+
+    await authenticateWithJWT();
+    console.log(`Server running at http://localhost:${PORT}`);
+  } catch (error) {
+    console.error('Failed to start server:', error);
+  }
 });
