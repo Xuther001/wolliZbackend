@@ -1,52 +1,77 @@
 require('dotenv').config();
-
 const express = require('express');
-const fetch = require('node-fetch'); // Alternatively we can use axios
+const fs = require('fs');
+const jwt = require('jsonwebtoken');
+
 const app = express();
 const PORT = 3001;
 
-app.use(express.json());
+const privateKey = fs.readFileSync('./private.key', 'utf8');
 
 let accessToken = null;
 let instanceUrl = null;
 
-async function authenticateWithSalesforce() {
-  const res = await fetch(`${process.env.SF_LOGIN_URL}/services/oauth2/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'password',
-      client_id: process.env.SF_CLIENT_ID,
-      client_secret: process.env.SF_CLIENT_SECRET,
-      username: process.env.SF_USERNAME,
-      password: process.env.SF_PASSWORD,
-    })
-  });
+async function authenticateWithJWT() {
+  const token = jwt.sign(
+    {
+      iss: process.env.SF_CLIENT_ID,
+      sub: process.env.SF_USERNAME,
+      aud: 'https://login.salesforce.com',
+      exp: Math.floor(Date.now() / 1000) + 300,
+    },
+    privateKey,
+    { algorithm: 'RS256' }
+  );
 
-  const data = await res.json();
+  try {
+    const response = await fetch(`${process.env.SF_LOGIN_URL}/services/oauth2/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: token,
+      }),
+    });
 
-  if (data.access_token) {
-    accessToken = data.access_token;
-    instanceUrl = data.instance_url;
-    console.log('Salesforce Authenticated!');
-  } else {
-    console.error('Salesforce Authentication Failed:', data);
+    const data = await response.json();
+
+    if (data.access_token) {
+      accessToken = data.access_token;
+      instanceUrl = data.instance_url;
+      console.log('✅ Salesforce Authenticated via JWT!');
+    } else {
+      console.error('❌ Authentication failed:', data);
+    }
+  } catch (err) {
+    console.error('🔥 JWT Auth Error:', err);
   }
 }
 
+app.use(express.json());
+
 app.get('/', (req, res) => {
-  res.send('Hello from Node.js backend!');
+  res.send('Hello from Node.js with JWT!');
 });
 
 app.get('/api/properties/:id', async (req, res) => {
+  if (!accessToken || !instanceUrl) {
+    return res.status(503).json({ error: 'Salesforce not authenticated' });
+  }
+
   const id = req.params.id;
+
   try {
     const sfRes = await fetch(`${instanceUrl}/services/apexrest/Property__c/${id}`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-      }
+      },
     });
+
+    if (!sfRes.ok) {
+      const errorText = await sfRes.text();
+      return res.status(sfRes.status).json({ error: errorText });
+    }
 
     const data = await sfRes.json();
     res.json(data);
@@ -56,13 +81,18 @@ app.get('/api/properties/:id', async (req, res) => {
 });
 
 app.delete('/api/properties/:id', async (req, res) => {
+  if (!accessToken || !instanceUrl) {
+    return res.status(503).json({ error: 'Salesforce not authenticated' });
+  }
+
   const id = req.params.id;
+
   try {
     const sfRes = await fetch(`${instanceUrl}/services/apexrest/Property__c/${id}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${accessToken}`,
-      }
+      },
     });
 
     const text = await sfRes.text();
@@ -73,6 +103,6 @@ app.delete('/api/properties/:id', async (req, res) => {
 });
 
 app.listen(PORT, async () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-  await authenticateWithSalesforce();
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  await authenticateWithJWT();
 });
