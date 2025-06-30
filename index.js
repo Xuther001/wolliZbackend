@@ -38,12 +38,12 @@ async function authenticateWithJWT() {
     if (data.access_token) {
       accessToken = data.access_token;
       instanceUrl = data.instance_url;
-      console.log('✅ Salesforce Authenticated via JWT!');
+      console.log('Salesforce Authenticated via JWT!');
     } else {
-      console.error('❌ Authentication failed:', data);
+      console.error('Authentication failed:', data);
     }
   } catch (err) {
-    console.error('🔥 JWT Auth Error:', err);
+    console.error('JWT Auth Error:', err);
   }
 }
 
@@ -80,6 +80,33 @@ app.get('/api/properties/:id', async (req, res) => {
   }
 });
 
+app.post('/api/properties', async (req, res) => {
+  if (!accessToken || !instanceUrl) {
+    return res.status(503).json({ error: 'Salesforce not authenticated' });
+  }
+
+  try {
+    const sfRes = await fetch(`${instanceUrl}/services/apexrest/Property__c/`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(req.body),
+    });
+
+    if (!sfRes.ok) {
+      const errorText = await sfRes.text();
+      return res.status(sfRes.status).json({ error: errorText });
+    }
+
+    const data = await sfRes.json();
+    res.status(201).json(data);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create property', detail: err.message });
+  }
+});
+
 app.delete('/api/properties/:id', async (req, res) => {
   if (!accessToken || !instanceUrl) {
     return res.status(503).json({ error: 'Salesforce not authenticated' });
@@ -95,6 +122,11 @@ app.delete('/api/properties/:id', async (req, res) => {
       },
     });
 
+    if (!sfRes.ok) {
+      const errorText = await sfRes.text();
+      return res.status(sfRes.status).json({ error: errorText });
+    }
+
     const text = await sfRes.text();
     res.send(text);
   } catch (err) {
@@ -103,6 +135,6 @@ app.delete('/api/properties/:id', async (req, res) => {
 });
 
 app.listen(PORT, async () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`Server running at http://localhost:${PORT}`);
   await authenticateWithJWT();
 });
